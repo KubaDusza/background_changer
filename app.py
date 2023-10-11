@@ -94,9 +94,9 @@ def main():
         if st.session_state.inverted:
             mask = invert_bitwise(mask)
 
-        with col1:
-            st.write("original")
-            st.image(image_decoded, channels="BGR", use_column_width=True)
+        #with col1:
+        #    st.write("original")
+        #    st.image(image_decoded, channels="BGR", use_column_width=True)
 
         with col2:
             st.write("resized")
@@ -116,10 +116,10 @@ def main():
                 st.session_state.generated_image, st.session_state.image_url = get_generated_image(resized_image, transparent_mask, prompt)
 
 
-        if st.session_state.generated_image:
-            st.header(st.session_state.prompt)
-            st.image(st.session_state.generated_image.content, caption='Generated Image',width=300, channels='BGR')
-            st.write(st.session_state.image_url)
+    if st.session_state.generated_image:
+        st.header(st.session_state.prompt)
+        st.image(st.session_state.generated_image.content, caption='Generated Image',width=300, channels='BGR')
+        st.write(st.session_state.image_url)
 
 
 
