@@ -24,10 +24,9 @@ def get_generated_image(image, mask, prompt):
         size="256x256"
     )
     image_url = response['data'][0]['url']
-    print(image_url)
 
     result_image = requests.get(image_url)
-    return result_image
+    return result_image, image_url
 
 
 def main():
@@ -114,11 +113,13 @@ def main():
             #st.image(transparent_mask, caption='Generated Image',width=300, channels='BGRA')
 
             with st.spinner("waiting for the image to be generated"):
-                st.session_state.generated_image = get_generated_image(resized_image, transparent_mask, prompt)
+                st.session_state.generated_image, st.session_state.image_url = get_generated_image(resized_image, transparent_mask, prompt)
+
 
         if st.session_state.generated_image:
             st.header(st.session_state.prompt)
             st.image(st.session_state.generated_image.content, caption='Generated Image',width=300, channels='BGR')
+            st.write(st.session_state.image_url)
 
 
 

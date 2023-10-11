@@ -34,6 +34,9 @@ def setup():
     if "generated_image" not in st.session_state:
         st.session_state.generated_image = None
 
+    if "image_url" not in st.session_state:
+        st.session_state.image_url = ""
+
 
 
 def grant_access():
