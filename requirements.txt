@@ -1,4 +1,3 @@
-opencv-python
 openai
 requests
 numpy
