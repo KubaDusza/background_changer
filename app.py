@@ -1,120 +1,145 @@
-import cv2
-import numpy as np
-import os
-import openai
-import requests
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
-openai.organization = "org-bEJ5GRQShzFzZJwuTmSp63x4"
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-
-IMAGE_FILE = "cat.png"
-INVERT_MASK = True
-
-
-def crop_image_to_square(image: str or np.ndarray, save_image_name: str = "cropped_image", save: bool = False):
-
-    if isinstance(image, str):
-        # if the passed variable is file name, we read the object:
-        # Load the image
-        image = cv2.imread(image)
-    # Get the height and width of the image
-    height, width, _ = image.shape
-
-    # Determine the length of the crop
-    crop_length = min(height, width)
-
-    # Compute the start and end row/column for the crop
-    start_row = (height - crop_length) // 2
-    end_row = start_row + crop_length
-    start_col = (width - crop_length) // 2
-    end_col = start_col + crop_length
-
-    # Crop the image
-    image = image[start_row:end_row, start_col:end_col]
-
-    if save:
-        # Save the resized image
-        cv2.imwrite(save_image_name + ".jpg", image)
-        return image, save_image_name + ".jpg"
-
-    return image
-
-
-def resize_image(image: str or np.ndarray, width: int = 600, height: int = 600, save_image_name: str = "resized_image", save: bool = False):
-
-    if isinstance(image, str):
-        # if the passed variable is file name, we read the object:
-        # Load the image
-        image = cv2.imread(image)
-
-    # Resize the image
-    image = cv2.resize(image, (width, height))
-
-    if save:
-        # Save the resized image
-        cv2.imwrite(save_image_name + ".jpg", image)
-        return image, save_image_name + ".jpg"
-
-    return image
-
-
-_, name = crop_image_to_square(IMAGE_FILE, save=True)
-img, name = resize_image(name, save=True)
-
-
-# Convert the image to grayscale
-gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-# Apply threshold to the grayscale image
-_, thresholded = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
-
-thresholded = cv2.bitwise_not(thresholded)
-
-# Create a 3-channel mask
-mask = cv2.merge([thresholded, thresholded, thresholded])
-
-# Convert the mask to RGBA
-mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGBA)
-
-
-# Create a transparent background
-b, g, r, a = cv2.split(mask)
-mask = np.zeros((img.shape[0], img.shape[1], 4), dtype=np.uint8)
-mask[:, :, 0] = b
-mask[:, :, 1] = g
-mask[:, :, 2] = r
-mask[:, :, 3] = (thresholded == 0) * 255
-
-if INVERT_MASK:
-    mask = cv2.bitwise_not(mask)
-
-mask_file_name = "mask_"+name.replace(".jpg", ".png")
-compressed_file_name = "compressed_"+name.replace(".jpg", ".png")
-print(mask_file_name, compressed_file_name)
-
-# Save the result
-cv2.imwrite(mask_file_name, mask)
-cv2.imwrite(compressed_file_name, img, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+from imports import *
+from modules.setup import setup, grant_access
+from modules.page import sticky_header
+from modules.image_processing import *
 
 
 
 
-prompt = input("give the prompt for the background: ")
 
-response = openai.Image.create_edit(
-  image=open(compressed_file_name, "rb"),
-  mask=open(mask_file_name, "rb"),
-  prompt=prompt,
-  n=1,
-  size="512x512"
-)
-image_url = response['data'][0]['url']
-print(image_url)
 
-result_image = requests.get(image_url)
-open("generated_"+name, "wb").write(result_image.content)
+def get_generated_image(image, mask, prompt):
+    _, img_encoded = cv2.imencode('.png', image)
+    img_bytes = io.BytesIO(img_encoded)
+
+    # Convert mask image to bytes without saving to disk
+    _, mask_img_encoded = cv2.imencode('.png', mask)
+
+    mask_img_bytes = io.BytesIO(mask_img_encoded)
+    response = openai.Image.create_edit(
+        image=img_bytes,
+        mask=mask_img_bytes,
+        prompt=prompt,
+        n=1,
+        size="256x256"
+    )
+    image_url = response['data'][0]['url']
+    print(image_url)
+
+    result_image = requests.get(image_url)
+    return result_image
+
+
+def main():
+    image = st.file_uploader("upload the image", type=[".jpg", ".png"])
+    if image is not None:
+
+        img = st.session_state.images.get(image.name, False)
+
+        if not img:
+            st.write("not in the database")
+            file_bytes = np.asarray(bytearray(image.read()), dtype=np.uint8)
+            image_decoded = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            cropped_image = crop_image_to_square(image_decoded)
+
+            resized_image = resize_image(cropped_image)
+
+            grayscale_image = convert_to_grayscale(resized_image)
+
+            optimal_threshold, optimal_mask = get_mask(grayscale_image)
+
+            st.session_state.images[image.name] = {"image_decoded": image_decoded,
+                                                   "resized": resized_image,
+                                                   "optimal_threshold": optimal_threshold,
+                                                   "grayscale_image": grayscale_image,
+
+                                                   }
+        else:
+            image_decoded = st.session_state.images[image.name]["image_decoded"]
+            resized_image = st.session_state.images[image.name]["resized"]
+            optimal_threshold = st.session_state.images[image.name]["optimal_threshold"]
+
+            grayscale_image = st.session_state.images[image.name]["grayscale_image"]
+
+        col1, col2, col3, col4 = st.columns(4)
+
+
+
+
+
+
+
+
+
+
+
+        reset_threshold_button, invert_mask_button = st.columns(2)
+
+        th = st.slider(f"choose the threshold for the mask{st.session_state.threshold_reset_counter}",
+                       min_value=0.0,
+                       label_visibility="collapsed",
+                       max_value=255.0,
+                       value=optimal_threshold)
+
+        if reset_threshold_button.button("reset to optimal threshold", disabled=th == optimal_threshold, use_container_width=True):
+            st.session_state.threshold_reset_counter += 1
+            st.rerun()
+
+        if invert_mask_button.button("invert the mask", use_container_width=True):
+            st.session_state.inverted = not st.session_state.inverted
+
+
+
+        threshold, mask = get_mask(grayscale_image, threshold=th)
+
+        if st.session_state.inverted:
+            mask = invert_bitwise(mask)
+
+        with col1:
+            st.write("original")
+            st.image(image_decoded, channels="BGR", use_column_width=True)
+
+        with col2:
+            st.write("resized")
+            st.image(resized_image, channels="BGR", use_column_width=True)
+
+        with col3:
+            st.write("mask")
+            st.image(mask, channels="RGBA", use_column_width=True)
+
+        if prompt := st.chat_input("Give the DALLE prompt"):
+            st.session_state.prompt = prompt
+            transparent_mask = create_transparent_mask(mask)
+
+            #st.image(transparent_mask, caption='Generated Image',width=300, channels='BGRA')
+
+            with st.spinner("waiting for the image to be generated"):
+                st.session_state.generated_image = get_generated_image(resized_image, transparent_mask, prompt)
+
+        if st.session_state.generated_image:
+            st.header(st.session_state.prompt)
+            st.image(st.session_state.generated_image.content, caption='Generated Image',width=300, channels='BGR')
+
+
+
+
+
+
+
+
+
+
+
+
+if __name__ == '__main__':
+    load_dotenv()
+    setup()
+
+    sticky_header()
+
+    # st.write(st.session_state.access_key in allowed_access_keys)
+    # st.write("allowed access keys:", allowed_access_keys)
+    # st.write("access key:", st.session_state.access_key)
+
+    if grant_access():
+        main()
